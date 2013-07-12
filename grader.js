@@ -22,18 +22,36 @@ References:
 */
 
 var fs = require('fs');
+var rest = require('restler');
+
 var program = require('commander');
 var cheerio = require('cheerio');
 var HTMLFILE_DEFAULT = "index.html";
 var CHECKSFILE_DEFAULT = "checks.json";
 
+
+var exitWithError = function(message) {
+    console.log(message);
+    process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
+}
+
 var assertFileExists = function(infile) {
     var instr = infile.toString();
     if(!fs.existsSync(instr)) {
-        console.log("%s does not exist. Exiting.", instr);
-        process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
+        exitWithError(instr + ' does not exist. Exiting');
     }
     return instr;
+};
+
+var download = function(url, oncomplete) {
+    rest.get(url).on('complete', function(result){
+        if (result instanceof Error) {
+            exitWithError("Download of " + url + " failed with error message: " + result.message);
+        }
+        else {
+            oncomplete(result);
+        }
+    });
 };
 
 var cheerioHtmlFile = function(htmlfile) {
@@ -61,14 +79,29 @@ var clone = function(fn) {
     return fn.bind({});
 };
 
+var checkProgramFile = function(){
+    var checkJson = checkHtmlFile(program.file, program.checks);
+    var outJson = JSON.stringify(checkJson, null, 4);
+    console.log(outJson);
+}
+
 if(require.main == module) {
     program
         .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
         .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
+        .option('-u, --url <html_file>', 'URL to index.html')
         .parse(process.argv);
-    var checkJson = checkHtmlFile(program.file, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+
+    if (program.url) {
+        download(program.url, function(data){
+            fs.writeFileSync('downloaded.html', data);
+            program.file = 'downloaded.html';
+            checkProgramFile();
+        });
+    }
+    else {
+        checkProgramFile();
+    }
 } else {
     exports.checkHtmlFile = checkHtmlFile;
 }
